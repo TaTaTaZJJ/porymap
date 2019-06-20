@@ -259,13 +259,13 @@ bool MainWindow::openProject(QString dir) {
         setWindowTitle(editor->project->getProjectTitle());
         loadDataStructures();
         populateMapList();
-        populateWildMonTabWidget(ui->tabWidget_WildMons, editor->project->wildMonFields);
+        //populateWildMonTabWidget(ui->tabWidget_WildMons, editor->project->wildMonFields);
         success = setMap(getDefaultMap(), true);
     } else {
         setWindowTitle(editor->project->getProjectTitle());
         loadDataStructures();
         populateMapList();
-        populateWildMonTabWidget(ui->tabWidget_WildMons, editor->project->wildMonFields);
+        //populateWildMonTabWidget(ui->tabWidget_WildMons, editor->project->wildMonFields);
     }
 
     if (success) {
@@ -1957,6 +1957,16 @@ void MainWindow::on_pushButton_AddConnection_clicked()
 void MainWindow::on_pushButton_RemoveConnection_clicked()
 {
     editor->removeCurrentConnection();
+}
+
+void MainWindow::on_pushButton_NewWildMonGroup_clicked() {
+    //
+    editor->addNewWildMonGroup();
+}
+
+void MainWindow::on_pushButton_ConfigureEncountersJSON_clicked() {
+    //
+    editor->configureEncounterJSON();
 }
 
 void MainWindow::on_comboBox_DiveMap_currentTextChanged(const QString &mapName)
