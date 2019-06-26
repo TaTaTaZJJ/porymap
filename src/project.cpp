@@ -1347,6 +1347,7 @@ void Project::readWildMonData() {
             //    wildMonData.insert(mapConstant, header);
             //else
             wildMonData[mapConstant].insert(encounter["base_label"].toString(), header);
+            encounterGroupLabels.append(encounter["base_label"].toString());
         }
     }
 
