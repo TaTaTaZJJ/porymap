@@ -616,6 +616,7 @@ void MainWindow::loadDataStructures() {
     project->readMetatileBehaviors();
     project->readTilesetProperties();
     project->readHealLocations();
+    project->readMiscellaneousConstants();
     project->readSpeciesIconPaths();
     project->readWildMonData();
 }
