@@ -8,6 +8,7 @@ The **"Breaking Changes"** listed below are changes that have been made in the d
 
 ## [Unreleased]
 ### Changed
+- Add wild encounter table editor.
 - Exporting map images is now more configurable. Events, connections, collision, etc. can be toggled on and off before exporting the image.
 - The entire Tileset Editor selection is now conveniently flipped when selecting x-flip or y-flip.
 
