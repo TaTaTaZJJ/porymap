@@ -80,6 +80,12 @@ void MainWindow::initCustomUI() {
     ui->mapList->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(ui->mapList, SIGNAL(customContextMenuRequested(const QPoint &)),
             this, SLOT(onOpenMapListContextMenu(const QPoint &)));
+
+    QStackedWidget *stack = ui->stackedWidget_WildMons;
+    QComboBox *labelCombo = ui->comboBox_EncounterGroupLabel;
+    connect(labelCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [=](int index){
+        stack->setCurrentIndex(index);
+    });
 }
 
 void MainWindow::initExtraSignals() {
@@ -143,6 +149,9 @@ void MainWindow::initMapSortOrder() {
 
 void MainWindow::setProjectSpecificUIVisibility()
 {
+    if (!projectConfig.getEncounterJsonActive())
+        ui->tabWidget->removeTab(4);
+
     switch (projectConfig.getBaseGameVersion())
     {
     case BaseGameVersion::pokeruby:
@@ -343,7 +352,7 @@ bool MainWindow::setMap(QString map_name, bool scrollTreeView) {
 
     if (scrollTreeView) {
         // Make sure we clear the filter first so we actually have a scroll target
-        mapListProxyModel->setFilterRegExp(QString::null);
+        mapListProxyModel->setFilterRegExp(QString());
         ui->mapList->setCurrentIndex(mapListProxyModel->mapFromSource(mapListIndexes.value(map_name)));
         ui->mapList->scrollTo(ui->mapList->currentIndex(), QAbstractItemView::PositionAtCenter);
     }
@@ -612,6 +621,9 @@ void MainWindow::loadDataStructures() {
     project->readMetatileBehaviors();
     project->readTilesetProperties();
     project->readHealLocations();
+    project->readMiscellaneousConstants();
+    project->readSpeciesIconPaths();
+    project->readWildMonData();
 }
 
 void MainWindow::populateMapList() {
@@ -1418,6 +1430,7 @@ void MainWindow::updateSelectedObjects() {
                 combo->setToolTip("The trainer type of this event object.\n"
                                   "If it is not a trainer, use NONE. SEE ALL DIRECTIONS\n"
                                   "should only be used with a sight radius of 1.");
+                combo->setMinimumContentsLength(10);
 
                 int index = combo->findData(value);
                 if (index != -1) {
@@ -1499,15 +1512,18 @@ void MainWindow::updateSelectedObjects() {
                 combo->setToolTip("The maximum number of metatiles this object\n"
                                   "is allowed to move left or right during its\n"
                                   "normal movement behavior actions.");
+                combo->setMinimumContentsLength(4);
             } else if (key == "radius_y") {
                 combo->setToolTip("The maximum number of metatiles this object\n"
                                   "is allowed to move up or down during its\n"
                                   "normal movement behavior actions.");
+                combo->setMinimumContentsLength(4);
             } else if (key == "script_label") {
                 combo->setToolTip("The script which is executed with this event.");
             } else if (key == "sight_radius_tree_id") {
                 combo->setToolTip("The maximum sight range of a trainer,\n"
                                   "OR the unique id of the berry tree.");
+                combo->setMinimumContentsLength(4);
             } else {
                 combo->addItem(value);
             }
@@ -1942,7 +1958,7 @@ void MainWindow::on_spinBox_ConnectionOffset_valueChanged(int offset)
     editor->updateConnectionOffset(offset);
 }
 
-void MainWindow::on_comboBox_ConnectedMap_currentTextChanged(const QString &mapName)
+void MainWindow::on_comboBox_ConnectedMap_activated(const QString &mapName)
 {
     editor->setConnectionMap(mapName);
 }
@@ -1957,12 +1973,20 @@ void MainWindow::on_pushButton_RemoveConnection_clicked()
     editor->removeCurrentConnection();
 }
 
-void MainWindow::on_comboBox_DiveMap_currentTextChanged(const QString &mapName)
+void MainWindow::on_pushButton_NewWildMonGroup_clicked() {
+    editor->addNewWildMonGroup();
+}
+
+void MainWindow::on_pushButton_ConfigureEncountersJSON_clicked() {
+    editor->configureEncounterJSON();
+}
+
+void MainWindow::on_comboBox_DiveMap_activated(const QString &mapName)
 {
     editor->updateDiveMap(mapName);
 }
 
-void MainWindow::on_comboBox_EmergeMap_currentTextChanged(const QString &mapName)
+void MainWindow::on_comboBox_EmergeMap_activated(const QString &mapName)
 {
     editor->updateEmergeMap(mapName);
 }
@@ -2195,6 +2219,7 @@ void MainWindow::closeEvent(QCloseEvent *event) {
         this->ui->splitter_main->saveState()
     );
     porymapConfig.save();
+    projectConfig.save();
 
     QMainWindow::closeEvent(event);
 }

@@ -111,11 +111,11 @@ private slots:
 
     void on_comboBox_ConnectionDirection_currentIndexChanged(const QString &arg1);
     void on_spinBox_ConnectionOffset_valueChanged(int offset);
-    void on_comboBox_ConnectedMap_currentTextChanged(const QString &mapName);
+    void on_comboBox_ConnectedMap_activated(const QString &mapName);
     void on_pushButton_AddConnection_clicked();
     void on_pushButton_RemoveConnection_clicked();
-    void on_comboBox_DiveMap_currentTextChanged(const QString &mapName);
-    void on_comboBox_EmergeMap_currentTextChanged(const QString &mapName);
+    void on_comboBox_DiveMap_activated(const QString &mapName);
+    void on_comboBox_EmergeMap_activated(const QString &mapName);
     void on_comboBox_PrimaryTileset_activated(const QString &arg1);
     void on_comboBox_SecondaryTileset_activated(const QString &arg1);
     void on_pushButton_clicked();
@@ -145,6 +145,8 @@ private slots:
     void on_pushButton_DeleteCustomHeaderField_clicked();
     void on_tableWidget_CustomHeaderFields_cellChanged(int row, int column);
     void on_horizontalSlider_MetatileZoom_valueChanged(int value);
+    void on_pushButton_NewWildMonGroup_clicked();
+    void on_pushButton_ConfigureEncountersJSON_clicked();
 
     void on_actionRegion_Map_Editor_triggered();
 

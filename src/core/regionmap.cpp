@@ -40,22 +40,28 @@ void RegionMap::save() {
 }
 
 void RegionMap::saveTileImages() {
-    QFile backgroundTileFile(pngPath());
-    if (backgroundTileFile.open(QIODevice::ReadOnly)) {
-        QByteArray imageData = backgroundTileFile.readAll();
-        QImage pngImage = QImage::fromData(imageData);
-        this->region_map_png_path = project->root + "/graphics/pokenav/region_map.png";
-        pngImage.save(pngPath());
+    if (region_map_png_needs_saving) {
+        QFile backgroundTileFile(pngPath());
+        if (backgroundTileFile.open(QIODevice::ReadOnly)) {
+            QByteArray imageData = backgroundTileFile.readAll();
+            QImage pngImage = QImage::fromData(imageData);
+            this->region_map_png_path = project->root + "/graphics/pokenav/region_map.png";
+            pngImage.save(pngPath());
 
-        PaletteUtil parser;
-        parser.writeJASC(project->root + "/graphics/pokenav/region_map.pal", pngImage.colorTable(), 0x70, 0x20);
+            PaletteUtil parser;
+            parser.writeJASC(project->root + "/graphics/pokenav/region_map.pal", pngImage.colorTable(), 0x70, 0x20);
+        }
+        region_map_png_needs_saving = false;
     }
-    QFile cityTileFile(cityTilesPath());
-    if (cityTileFile.open(QIODevice::ReadOnly)) {
-        QByteArray imageData = cityTileFile.readAll();
-        QImage cityTilesImage = QImage::fromData(imageData);
-        this->city_map_tiles_path = project->root + "/graphics/pokenav/zoom_tiles.png";
-        cityTilesImage.save(cityTilesPath());
+    if (city_map_png_needs_saving) {
+        QFile cityTileFile(cityTilesPath());
+        if (cityTileFile.open(QIODevice::ReadOnly)) {
+            QByteArray imageData = cityTileFile.readAll();
+            QImage cityTilesImage = QImage::fromData(imageData);
+            this->city_map_tiles_path = project->root + "/graphics/pokenav/zoom_tiles.png";
+            cityTilesImage.save(cityTilesPath());
+        }
+        city_map_png_needs_saving = false;
     }
 }
 
@@ -185,7 +191,7 @@ void RegionMap::saveLayout() {
     }
 
     for (auto sec : project->mapSectionNameToValue.keys()) {
-        if (!mapSecToMapEntry.contains(sec)) continue;
+        if (!mapSecToMapEntry.contains(sec) || sec == "MAPSEC_NONE") continue;
         RegionMapEntry entry = mapSecToMapEntry.value(sec);
         entries_text += "    [" + sec + QString("]%1= {").arg(QString(" ").repeated(1 + longest - sec.length()))
             + QString::number(entry.x) + ", " + QString::number(entry.y) + ", " 
@@ -346,6 +352,7 @@ QString RegionMap::pngPath() {
 
 void RegionMap::setTemporaryPngPath(QString path) {
     this->region_map_png_path = path;
+    this->region_map_png_needs_saving = true;
 }
 
 QString RegionMap::cityTilesPath() {
@@ -354,6 +361,7 @@ QString RegionMap::cityTilesPath() {
 
 void RegionMap::setTemporaryCityTilesPath(QString path) {
     this->city_map_tiles_path = path;
+    this->city_map_png_needs_saving = true;
 }
 
 // From x, y of image.

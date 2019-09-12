@@ -344,7 +344,7 @@ QString Project::readMapLayoutId(QString map_name) {
     QJsonDocument mapDoc;
     if (!parser.tryParseJsonFile(&mapDoc, mapFilepath)) {
         logError(QString("Failed to read map layout id from %1").arg(mapFilepath));
-        return QString::null;
+        return QString();
     }
 
     QJsonObject mapObj = mapDoc.object();
@@ -360,7 +360,7 @@ QString Project::readMapLocation(QString map_name) {
     QJsonDocument mapDoc;
     if (!parser.tryParseJsonFile(&mapDoc, mapFilepath)) {
         logError(QString("Failed to read map's region map section from %1").arg(mapFilepath));
-        return QString::null;
+        return QString();
     }
 
     QJsonObject mapObj = mapDoc.object();
@@ -520,6 +520,79 @@ void Project::saveMapGroups() {
     mapGroupsFile.write(mapGroupsDoc.toJson());
 }
 
+void Project::saveWildMonData() {
+    if (!projectConfig.getEncounterJsonActive()) return;
+
+    QString wildEncountersJsonFilepath = QString("%1/src/data/wild_encounters.json").arg(root);
+    QFile wildEncountersFile(wildEncountersJsonFilepath);
+    if (!wildEncountersFile.open(QIODevice::WriteOnly)) {
+        logError(QString("Error: Could not open %1 for writing").arg(wildEncountersJsonFilepath));
+        return;
+    }
+
+    QJsonObject wildEncountersObject;
+    QJsonArray wildEncounterGroups = QJsonArray();
+
+    // gWildMonHeaders label is not mutable
+    QJsonObject monHeadersObject;
+    monHeadersObject["label"] = "gWildMonHeaders";
+    monHeadersObject["for_maps"] = true;
+
+    QJsonArray fieldsInfoArray;
+    for (QPair<QString, QVector<int>> fieldInfo : wildMonFields) {
+        QJsonObject fieldObject;
+        QJsonArray rateArray;
+
+        for (int rate : fieldInfo.second)
+            rateArray.append(rate);
+
+        fieldObject["type"] = fieldInfo.first;
+        fieldObject["encounter_rates"] = rateArray;
+
+        fieldsInfoArray.append(fieldObject);
+    }
+    monHeadersObject["fields"] = fieldsInfoArray;
+
+    QJsonArray encountersArray = QJsonArray();
+    for (QString key : wildMonData.keys()) {
+        for (QString groupLabel : wildMonData.value(key).keys()) {
+            QJsonObject encounterObject;
+            encounterObject["map"] = key;
+            encounterObject["base_label"] = groupLabel;
+
+            WildPokemonHeader encounterHeader = wildMonData.value(key).value(groupLabel);
+            for (QString fieldName : encounterHeader.wildMons.keys()) {
+                QJsonObject fieldObject;
+                WildMonInfo monInfo = encounterHeader.wildMons.value(fieldName);
+                fieldObject["encounter_rate"] = monInfo.encounterRate;
+                QJsonArray monArray;
+                for (WildPokemon wildMon : monInfo.wildPokemon) {
+                    QJsonObject monEntry;
+                    monEntry["min_level"] = wildMon.minLevel;
+                    monEntry["max_level"] = wildMon.maxLevel;
+                    monEntry["species"] = wildMon.species;
+                    monArray.append(monEntry);
+                }
+                fieldObject["mons"] = monArray;
+                encounterObject[fieldName] = fieldObject;
+            }
+            encountersArray.append(encounterObject);
+        }
+    }
+    monHeadersObject["encounters"] = encountersArray;
+    wildEncounterGroups.append(monHeadersObject);
+
+    // add extra Json objects that are not associated with maps to the file
+    for (QString label : extraEncounterGroups.keys()) {
+        wildEncounterGroups.append(extraEncounterGroups[label]);
+    }
+
+    wildEncountersObject["wild_encounter_groups"] = wildEncounterGroups;
+    QJsonDocument wildEncountersDoc(wildEncountersObject);
+    wildEncountersFile.write(wildEncountersDoc.toJson());
+    wildEncountersFile.close();
+}
+
 void Project::saveMapConstantsHeader() {
     QString text = QString("#ifndef GUARD_CONSTANTS_MAP_GROUPS_H\n");
     text += QString("#define GUARD_CONSTANTS_MAP_GROUPS_H\n");
@@ -621,6 +694,7 @@ void Project::saveHealLocationStruct(Map *map) {
 }
 
 void Project::saveTilesets(Tileset *primaryTileset, Tileset *secondaryTileset) {
+    saveTilesetMetatileLabels(primaryTileset, secondaryTileset);
     saveTilesetMetatileAttributes(primaryTileset);
     saveTilesetMetatileAttributes(secondaryTileset);
     saveTilesetMetatiles(primaryTileset);
@@ -629,6 +703,86 @@ void Project::saveTilesets(Tileset *primaryTileset, Tileset *secondaryTileset) {
     saveTilesetTilesImage(secondaryTileset);
     saveTilesetPalettes(primaryTileset, true);
     saveTilesetPalettes(secondaryTileset, false);
+}
+
+void Project::saveTilesetMetatileLabels(Tileset *primaryTileset, Tileset *secondaryTileset) {
+    QString primaryPrefix = QString("METATILE_%1_").arg(QString(primaryTileset->name).replace("gTileset_", ""));
+    QString secondaryPrefix = QString("METATILE_%1_").arg(QString(secondaryTileset->name).replace("gTileset_", ""));
+
+    QMap<QString, int> defines;
+    bool definesFileModified = false;
+
+    defines = parser.readCDefines("include/constants/metatile_labels.h", (QStringList() << "METATILE_"));
+
+    // Purge old entries from the file.
+    QStringList definesToRemove;
+    for (QString defineName : defines.keys()) {
+        if (defineName.startsWith(primaryPrefix) || defineName.startsWith(secondaryPrefix)) {
+            definesToRemove << defineName;
+        }
+    }
+    for (QString defineName : definesToRemove) {
+        defines.remove(defineName);
+        definesFileModified = true;
+    }
+
+    // Add the new labels.
+    for (int i = 0; i < primaryTileset->metatiles->size(); i++) {
+        Metatile *metatile = primaryTileset->metatiles->at(i);
+        if (metatile->label.size() != 0) {
+            QString defineName = QString("%1%2").arg(primaryPrefix, metatile->label);
+            defines.insert(defineName, i);
+            definesFileModified = true;
+        }
+    }
+    for (int i = 0; i < secondaryTileset->metatiles->size(); i++) {
+        Metatile *metatile = secondaryTileset->metatiles->at(i);
+        if (metatile->label.size() != 0) {
+            QString defineName = QString("%1%2").arg(secondaryPrefix, metatile->label);
+            defines.insert(defineName, i + Project::num_tiles_primary);
+            definesFileModified = true;
+        }
+    }
+
+    if (!definesFileModified) {
+        return;
+    }
+
+    auto getTilesetFromLabel = [](QString labelName) {
+        return QRegularExpression("METATILE_(?<tileset>[A-Za-z0-9]+)_").match(labelName).captured("tileset");
+    };
+
+    QString outputText = "#ifndef GUARD_METATILE_LABELS_H\n";
+    outputText += "#define GUARD_METATILE_LABELS_H\n";
+
+    for (int i = 0; i < defines.size();) {
+        QString defineName = defines.keys()[i];
+        QString currentTileset = getTilesetFromLabel(defineName);
+        outputText += QString("\n// gTileset_%1\n").arg(currentTileset);
+
+        int j = 0, longestLength = 0;
+        QMap<QString, int> definesOut;
+
+        // Setup for pretty formatting.
+        while (i + j < defines.size() && getTilesetFromLabel(defines.keys()[i + j]) == currentTileset) {
+            defineName = defines.keys()[i + j];
+            if (defineName.size() > longestLength)
+                longestLength = defineName.size();
+            definesOut.insert(defineName, defines[defineName]);
+            j++;
+        }
+        for (QString defineName : definesOut.keys()) {
+            int value = defines[defineName];
+            QString line = QString("#define %1  0x%2\n")
+                .arg(defineName, -1 * longestLength)
+                .arg(QString("%1").arg(value, 3, 16, QChar('0')).toUpper());
+            outputText += line;
+        }
+        i += j;
+    }
+
+    outputText += "\n#endif // GUARD_METATILE_LABELS_H\n";
+    saveTextFile(root + "/include/constants/metatile_labels.h", outputText);
 }
 
 void Project::saveTilesetMetatileAttributes(Tileset *tileset) {
@@ -985,6 +1139,7 @@ void Project::saveAllDataStructures() {
     saveMapLayouts();
     saveMapGroups();
     saveMapConstantsHeader();
+    saveWildMonData();
 }
 
 void Project::loadTilesetAssets(Tileset* tileset) {
@@ -1040,6 +1195,7 @@ void Project::loadTilesetAssets(Tileset* tileset) {
     QImage image = QImage(tileset->tilesImagePath);
     this->loadTilesetTiles(tileset, image);
     this->loadTilesetMetatiles(tileset);
+    this->loadTilesetMetatileLabels(tileset);
 
     // palettes
     QList<QList<QRgb>> *palettes = new QList<QList<QRgb>>;
@@ -1142,6 +1298,23 @@ void Project::loadTilesetMetatiles(Tileset* tileset) {
     }
 }
 
+void Project::loadTilesetMetatileLabels(Tileset* tileset) {
+    QString tilesetPrefix = QString("METATILE_%1_").arg(QString(tileset->name).replace("gTileset_", ""));
+    QMap<QString, int> labels = parser.readCDefines("include/constants/metatile_labels.h", QStringList() << tilesetPrefix);
+
+    for (QString labelName : labels.keys()) {
+        int metatileId = labels[labelName];
+        // subtract Project::num_tiles_primary from secondary metatiles
+        Metatile *metatile = Tileset::getMetatile(metatileId - (tileset->is_secondary == "TRUE" ? Project::num_tiles_primary : 0), tileset, nullptr);
+        if (metatile) {
+            metatile->label = labelName.replace(tilesetPrefix, "");
+        } else {
+            QString hexString = QString("%1").arg(metatileId, 3, 16, QChar('0')).toUpper();
+            logError(QString("Metatile 0x%1 cannot be found in tileset '%2'").arg(hexString, tileset->name));
+        }
+    }
+}
+
 Blockdata* Project::readBlockdata(QString path) {
     Blockdata *blockdata = new Blockdata;
     QFile file(path);
@@ -1203,6 +1376,59 @@ void Project::deleteFile(QString path) {
     QFile file(path);
     if (file.exists() && !file.remove()) {
         logError(QString("Could not delete file '%1': ").arg(path) + file.errorString());
+    }
+}
+
+void Project::readWildMonData() {
+    if (!projectConfig.getEncounterJsonActive()) return;
+
+    QString wildMonJsonFilepath = QString("%1/src/data/wild_encounters.json").arg(root);
+    QJsonDocument wildMonsJsonDoc;
+    if (!parser.tryParseJsonFile(&wildMonsJsonDoc, wildMonJsonFilepath)) {
+        logError(QString("Failed to read wild encounters from %1").arg(wildMonJsonFilepath));
+        return;
+    }
+
+    QJsonObject wildMonObj = wildMonsJsonDoc.object();
+
+    for (auto subObjectRef : wildMonObj["wild_encounter_groups"].toArray()) {
+        QJsonObject subObject = subObjectRef.toObject();
+        if (!subObject["for_maps"].toBool()) {
+            extraEncounterGroups.insert(subObject["label"].toString(), subObject);
+            continue;
+        }
+
+        for (auto field : subObject["fields"].toArray()) {
+            QPair<QString, QVector<int>> encounterField;
+            encounterField.first = field.toObject()["type"].toString();
+            for (auto val : field.toObject()["encounter_rates"].toArray())
+                encounterField.second.append(val.toInt());
+            wildMonFields.append(encounterField);
+        }
+
+        QJsonArray encounters = subObject["encounters"].toArray();
+        for (QJsonValue encounter : encounters) {
+            QString mapConstant = encounter["map"].toString();
+
+            WildPokemonHeader header;
+
+            for (QPair<QString, QVector<int>> monField : wildMonFields) {
+                QString field = monField.first;
+                if (encounter[field] != QJsonValue::Undefined) {
+                    header.wildMons[field].active = true;
+                    header.wildMons[field].encounterRate = encounter[field]["encounter_rate"].toInt();
+                    for (QJsonValue mon : encounter[field]["mons"].toArray()) {
+                        header.wildMons[field].wildPokemon.append({
+                            mon["min_level"].toInt(),
+                            mon["max_level"].toInt(),
+                            mon["species"].toString()
+                        });
+                    }
+                }
+            }
+            wildMonData[mapConstant].insert(encounter["base_label"].toString(), header);
+            encounterGroupLabels.append(encounter["base_label"].toString());
+        }
     }
 }
 
@@ -1440,7 +1666,7 @@ void Project::readHealLocations() {
 
     dataQualifiers.insert("heal_locations", getDataQualifiers(text, "sHealLocations"));
 
-    QRegularExpression regex("MAP_GROUP\\((?<map>[A-Za-z0-9_]*)\\),\\s+MAP_NUM\\((\\1)\\),\\s+(?<x>[0-9A-Fa-fx]*),\\s+(?<y>[0-9A-Fa-fx]*)");
+    QRegularExpression regex("MAP_GROUP[\\(\\s]+(?<map>[A-Za-z0-9_]+)[\\s\\)]+,\\s*MAP_NUM[\\(\\s]+(\\1)[\\s\\)]+,\\s*(?<x>[0-9A-Fa-fx]+),\\s*(?<y>[0-9A-Fa-fx]+)");
     QRegularExpressionMatchIterator iter = regex.globalMatch(text);
 
     flyableMaps.clear();
@@ -1488,7 +1714,7 @@ void Project::readMapBattleScenes() {
 }
 
 void Project::readWeatherNames() {
-    QStringList prefixes = (QStringList() << "WEATHER_");
+    QStringList prefixes = (QStringList() << "\\bWEATHER_");
     parser.readCDefinesSorted("include/constants/weather.h", prefixes, weatherNames);
 }
 
@@ -1536,6 +1762,12 @@ QMap<QString, int> Project::getEventObjGfxConstants() {
     return constants;
 }
 
+void Project::readMiscellaneousConstants() {
+    QMap<QString, int> pokemonDefines = parser.readCDefines("include/pokemon.h", QStringList() << "MIN_" << "MAX_");
+    miscConstants.insert("max_level_define", pokemonDefines.value("MAX_LEVEL"));
+    miscConstants.insert("min_level_define", pokemonDefines.value("MIN_LEVEL"));
+}
+
 QString Project::fixPalettePath(QString path) {
     path = path.replace(QRegExp("\\.gbapal$"), ".pal");
     return path;
@@ -1561,7 +1793,7 @@ void Project::loadEventPixmaps(QList<Event*> objects) {
 
     QMap<QString, int> constants = getEventObjGfxConstants();
 
-    QStringList pointers = parser.readCArray("src/data/field_event_obj/event_object_graphics_info_pointers.h", "gEventObjectGraphicsInfoPointers");
+    QMap<QString, QString> pointerHash = parser.readNamedIndexCArray("src/data/field_event_obj/event_object_graphics_info_pointers.h", "gEventObjectGraphicsInfoPointers");
 
     for (Event *object : objects) {
         if (!object->pixmap.isNull()) {
@@ -1585,9 +1817,7 @@ void Project::loadEventPixmaps(QList<Event*> objects) {
         }
 
         if (event_type == EventType::Object) {
-            int sprite_id = constants.value(object->get("sprite"));
-
-            QString info_label = pointers.value(sprite_id).replace("&", "");
+            QString info_label = pointerHash[object->get("sprite")].replace("&", "");
             QStringList gfx_info = parser.readCArray("src/data/field_event_obj/event_object_graphics_info.h", info_label);
             QString pic_label = gfx_info.value(14);
             QString dimensions_label = gfx_info.value(11);
@@ -1616,6 +1846,14 @@ void Project::loadEventPixmaps(QList<Event*> objects) {
                 }
             }
         }
+    }
+}
+
+void Project::readSpeciesIconPaths() {
+    QMap<QString, QString> monIconNames = parser.readNamedIndexCArray("src/pokemon_icon.c", "gMonIconTable");
+    for (QString species : monIconNames.keys()) {
+        QString path = parser.readCIncbin("src/data/graphics/pokemon.h", monIconNames.value(species));
+        speciesToIconPath.insert(species, root + "/" + path.replace("4bpp", "png"));
     }
 }
 
